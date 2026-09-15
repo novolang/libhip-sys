@@ -1,0 +1,123 @@
+// API tests for the HIP runtime bindings.
+//
+// The tests call the C library, so the suite needs ROCm installed and
+// linkable.  `novo pkg build` type-checks the declarations without it;
+// `novo test` runs them and does not.
+//
+// A machine with ROCm installed and no AMD card is a normal machine,
+// and the runtime answers a failure code on it rather than crashing.
+// Every test below is written so that both answers are correct: a
+// success is asserted to be self-consistent, and a failure is asserted
+// to name itself.
+
+use std.test
+use libhip
+
+// The device count is readable, and the answer is either a count or an
+// error that has a name.
+@test
+fn test_the_device_count_is_a_count_or_a_named_error() [io]
+    test.case("hip_get_device_count")
+    let slot = ptr.alloc_word()
+    let rc = libhip.hip_get_device_count(slot)
+    if rc == 0
+        test.assert(ptr.read_word(slot) >= 0)
+    else
+        test.assert(ptr.read_str(libhip.hip_get_error_name(rc)) != "")
+    ptr.free(slot)
+
+// Selecting a device and reading it back agree, on a machine that has
+// one.
+@test
+fn test_the_current_device_round_trips() [io]
+    test.case("hip_set_device then hip_get_device")
+    let slot = ptr.alloc_word()
+    if libhip.hip_set_device(0) == 0
+        test.assert(libhip.hip_get_device(slot) == 0)
+        test.assert(ptr.read_word(slot) == 0)
+    else
+        test.assert(libhip.hip_get_last_error() != 0)
+    ptr.free(slot)
+
+// An allocation answers an address, and freeing it answers success.
+@test
+fn test_an_allocation_answers_an_address() [io]
+    test.case("hip_malloc then hip_free")
+    let slot = ptr.alloc_word()
+    let rc = libhip.hip_malloc(slot, 1024)
+    if rc == 0
+        let dev = ptr.read_word(slot)
+        test.assert(dev != 0)
+        test.assert(libhip.hip_free(dev) == 0)
+    else
+        test.assert(ptr.read_str(libhip.hip_get_error_string(rc)) != "")
+    ptr.free(slot)
+
+// Freeing the null address is allowed and does nothing.
+@test
+fn test_freeing_the_null_address_is_allowed() [io]
+    test.case("hip_free(0)")
+    let rc = libhip.hip_free(0)
+    test.assert(rc == 0 or ptr.read_str(libhip.hip_get_error_name(rc)) != "")
+
+// A round trip through device memory gives back the bytes it was
+// given: eight bytes up, cleared, and eight bytes down.
+@test
+fn test_a_round_trip_through_device_memory_keeps_the_bytes() [io]
+    test.case("hip_memcpy up, hip_memset, hip_memcpy down")
+    let slot = ptr.alloc_word()
+    let host_in = ptr.alloc_word()
+    let host_out = ptr.alloc_word()
+    ptr.write_word(host_in, 0x0102030405060708)
+    if libhip.hip_malloc(slot, 8) == 0
+        let dev = ptr.read_word(slot)
+        test.assert(libhip.hip_memcpy(dev, host_in, 8, 1) == 0)
+        test.assert(libhip.hip_memcpy(host_out, dev, 8, 2) == 0)
+        test.assert(ptr.read_word(host_out) == 0x0102030405060708)
+        test.assert(libhip.hip_memset(dev, 0, 8) == 0)
+        test.assert(libhip.hip_memcpy(host_out, dev, 8, 2) == 0)
+        test.assert(ptr.read_word(host_out) == 0)
+        test.assert(libhip.hip_free(dev) == 0)
+    ptr.free(slot)
+    ptr.free(host_in)
+    ptr.free(host_out)
+
+// The barrier answers the error of the last task to fail, and there is
+// no task on a device nothing was asked of.
+@test
+fn test_the_barrier_answers_a_code() [io]
+    test.case("hip_device_synchronize")
+    let rc = libhip.hip_device_synchronize()
+    test.assert(rc == 0 or ptr.read_str(libhip.hip_get_error_name(rc)) != "")
+
+// Peeking leaves the error where it is, and getting it clears it.
+@test
+fn test_peeking_leaves_the_error_and_getting_clears_it() [io]
+    test.case("hip_peek_at_last_error then hip_get_last_error")
+    let peeked = libhip.hip_peek_at_last_error()
+    test.assert(libhip.hip_peek_at_last_error() == peeked)
+    let got = libhip.hip_get_last_error()
+    test.assert(got == peeked)
+    test.assert(libhip.hip_peek_at_last_error() == 0)
+
+// Error code 0 is success, and the runtime names it.
+@test
+fn test_error_zero_is_named_success() [io]
+    test.case("hip_get_error_name and hip_get_error_string of 0")
+    test.assert(ptr.read_str(libhip.hip_get_error_name(0)) == "hipSuccess")
+    test.assert(ptr.read_str(libhip.hip_get_error_string(0)) != "")
+
+// The free memory is never more than the total.
+@test
+fn test_the_free_memory_is_within_the_total() [io]
+    test.case("hip_mem_get_info")
+    let free_slot = ptr.alloc_word()
+    let total_slot = ptr.alloc_word()
+    let rc = libhip.hip_mem_get_info(free_slot, total_slot)
+    if rc == 0
+        test.assert(ptr.read_word(total_slot) > 0)
+        test.assert(ptr.read_word(free_slot) <= ptr.read_word(total_slot))
+    else
+        test.assert(ptr.read_str(libhip.hip_get_error_name(rc)) != "")
+    ptr.free(free_slot)
+    ptr.free(total_slot)

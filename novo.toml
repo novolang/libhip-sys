@@ -1,0 +1,42 @@
+[package]
+name        = "libhip-sys"
+version     = "0.1.0"
+description = "Bindings over the HIP runtime library: the device count, the current device, device memory, the four copy directions, the synchronisation barrier and the error codes."
+license     = "Apache-2.0"
+
+# NOT a `0.0.x` draft.  An interface release is the shape whose every
+# `pub fn` body is a `todo()`, and every `pub fn` here is an `@ffi`
+# declaration with no body at all — `novo pkg publish` reads that as a
+# release with bodies and refuses a `0.0.x` version for it.
+stability   = "experimental"
+
+# `sys`: the layer for a package that binds one C library and decides
+# nothing of its own.  Every `pub fn` below is an `@ffi` declaration of
+# a function in the HIP runtime.
+layer       = "sys"
+
+category    = "bindings"
+
+# The one C library.  `libamdhip64.so` is the HIP runtime, the part of
+# ROCm a host program links against.  There is no `libhip.so`.
+# Installing this package does not install it.
+wraps       = "libamdhip64"
+
+tags        = ["ffi", "hip", "rocm", "gpu", "amd", "bindings"]
+repository  = "https://github.com/novolang/libhip-sys"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+[docs.pages]
+"README.md" = "The HIP runtime entry points a novo-lang program needs to move data to a GPU"
+
+[dependencies]
+# None.  A binding over one C library depends on no novo-lang package.
+
+# The link flag for the `library = "amdhip64"` name every declaration in
+# `src/` carries.  The default would be the same `-lamdhip64`; the block
+# is here so a reader knows which flag to add a `-L` to, because ROCm
+# installs into `/opt/rocm/lib` rather than anywhere the linker already
+# looks.
+[ffi.amdhip64]
+linker = "-lamdhip64"

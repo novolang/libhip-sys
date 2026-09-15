@@ -1,0 +1,110 @@
+// The HIP runtime entry points, one novo-lang declaration each.
+//
+// Every function answers a `hipError_t`, which is an integer: 0 is
+// `hipSuccess` and every other value is a failure.
+// `hip_get_error_string` turns one into text.
+//
+// A device address is an `Int`, and so is a host address.  The runtime
+// takes both as `void *`, and neither side checks a length, so a copy
+// that names more bytes than a buffer holds is the caller's error.
+//
+// An out-parameter is the address of a slot the caller owns.
+// `ptr.alloc_word` in the standard library returns the address of an
+// eight-byte slot, which is the width the runtime writes for a device
+// address and wider than it needs for a count.
+//
+// The names are the novo-lang spelling `hip_malloc`; the symbols are
+// the C spelling `hipMalloc`.
+
+// Get the number of compute-capable devices.
+//
+// The count is written to the eight-byte slot at `count_out` as a
+// 32-bit integer.  Answers 0 when the call succeeded, which includes
+// the case of a machine with no device and a count of zero.  A machine
+// with no driver installed answers a failure instead.
+pub @ffi(library = "amdhip64", symbol = "hipGetDeviceCount")
+fn hip_get_device_count(count_out: Int) -> Int [io, ffi]
+
+// Set the device on which the calling thread executes.
+//
+// `device` is an index below the count.  Every allocation and every
+// copy after this call belongs to that device.
+pub @ffi(library = "amdhip64", symbol = "hipSetDevice")
+fn hip_set_device(device: Int) -> Int [io, ffi]
+
+// Get the device on which the calling thread executes.
+//
+// The index is written to the slot at `device_out` as a 32-bit
+// integer.
+pub @ffi(library = "amdhip64", symbol = "hipGetDevice")
+fn hip_get_device(device_out: Int) -> Int [io, ffi]
+
+// Allocate `size` bytes of linear memory on the device.
+//
+// The device address is written to the eight-byte slot at
+// `dev_ptr_out`.  Read it back with `ptr.read_word`.  The memory is not
+// cleared.  A failure writes nothing and answers 2,
+// `hipErrorOutOfMemory`.
+pub @ffi(library = "amdhip64", symbol = "hipMalloc")
+fn hip_malloc(dev_ptr_out: Int, size: Int) -> Int [io, ffi]
+
+// Free memory on the device.
+//
+// `dev_ptr` is an address `hip_malloc` wrote.  Freeing the null address
+// is allowed and does nothing.
+pub @ffi(library = "amdhip64", symbol = "hipFree")
+fn hip_free(dev_ptr: Int) -> Int [io, ffi]
+
+// Copy `count` bytes between host and device memory.
+//
+// `kind` says which way: 1 is host to device, 2 is device to host, 3
+// is device to device, and 4 asks the runtime to work it out from the
+// two addresses.  The copy is synchronous with respect to the host for
+// every direction except device to device.
+pub @ffi(library = "amdhip64", symbol = "hipMemcpy")
+fn hip_memcpy(dst: Int, src: Int, count: Int, kind: Int) -> Int [io, ffi]
+
+// Set `count` bytes of device memory to the low byte of `value`.
+pub @ffi(library = "amdhip64", symbol = "hipMemset")
+fn hip_memset(dev_ptr: Int, value: Int, count: Int) -> Int [io, ffi]
+
+// Wait until every task the device has been given has finished.
+//
+// Answers the error of the last task to fail, so a kernel that faulted
+// is reported here rather than at the call that launched it.
+pub @ffi(library = "amdhip64", symbol = "hipDeviceSynchronize")
+fn hip_device_synchronize() -> Int [io, ffi]
+
+// Get the last error of this thread, and reset it to 0.
+//
+// Some runtime calls report a failure only through this, because a
+// kernel launch is asynchronous and has already returned by the time
+// the device refuses it.
+pub @ffi(library = "amdhip64", symbol = "hipGetLastError")
+fn hip_get_last_error() -> Int [io, ffi]
+
+// Get the last error of this thread, and leave it where it is.
+pub @ffi(library = "amdhip64", symbol = "hipPeekAtLastError")
+fn hip_peek_at_last_error() -> Int [io, ffi]
+
+// Get the description of an error code.
+//
+// The return value is the address of a NUL-terminated C string the
+// runtime owns.  Read it with `ptr.read_str` and do not free it.
+pub @ffi(library = "amdhip64", symbol = "hipGetErrorString")
+fn hip_get_error_string(error: Int) -> Int [io, ffi]
+
+// Get the name of an error code, such as `hipErrorOutOfMemory`.
+//
+// The return value is the address of a NUL-terminated C string the
+// runtime owns.
+pub @ffi(library = "amdhip64", symbol = "hipGetErrorName")
+fn hip_get_error_name(error: Int) -> Int [io, ffi]
+
+// Get the free and total device memory in bytes.
+//
+// Both are written as 64-bit values to the eight-byte slots at
+// `free_out` and `total_out`.  This is the call that answers whether a
+// model's weights fit before the upload starts.
+pub @ffi(library = "amdhip64", symbol = "hipMemGetInfo")
+fn hip_mem_get_info(free_out: Int, total_out: Int) -> Int [io, ffi]
