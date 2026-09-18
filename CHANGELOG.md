@@ -9,6 +9,23 @@ with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
 The documentation and comments in plain prose; no declaration changed.
 
+### Corrected against the HIP runtime API reference
+
+- `hipGetErrorString` and `hipGetErrorName` answer the address of a C
+  string. Every other entry point answers a `hipError_t`.
+- `hipGetDeviceCount` answers `hipErrorNoDevice` on a machine the
+  runtime finds no card on.
+- `hipMemcpyKind` defines `hipMemcpyHostToHost` as 0, so the
+  directions are 0 to 4. Any other value answers
+  `hipErrorInvalidMemcpyDirection`.
+- `hipDeviceSynchronize` blocks until the device has finished and
+  reports a failure when one of those tasks failed. It does not
+  promise the last one.
+- `hipMalloc` writes the address into a slot the caller supplies,
+  where `malloc` answers the address directly.
+- The HIP runtime is reachable from this distribution's archive as
+  `libamdhip64-dev`, as well as from AMD's own ROCm repository.
+
 ## 0.1.0 — 2026-09-15
 
 The first release: thirteen entry points of the HIP runtime library,
