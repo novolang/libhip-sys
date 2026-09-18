@@ -1,6 +1,6 @@
 # libhip-sys
 
-HIP is AMD's C interface for running general-purpose computation on a
+HIP is AMD's C API for running general-purpose computation on a
 graphics card. A program uses it to select a card, allocate memory on
 it, copy data to and from it, and wait for the work to finish. It is
 documented in
@@ -8,12 +8,11 @@ documented in
 This package declares thirteen of that library's entry points to
 novo-lang, one declaration each.
 
-**Status: a binding, not a port.** Every function in this package is a
-declaration of a function in the HIP runtime. The package contains no
-logic of its own, and it does nothing without ROCm installed. The
-thirteen entry points are the ones a program needs to move data to a
-card and back; the section "What is not included" says what a program
-still cannot do with them alone.
+Every function here is a declaration of a function in the HIP runtime.
+The package contains no logic of its own, and it does nothing without
+ROCm installed. The thirteen entry points are the ones a program needs
+to move data to a card and back. The section "What is not included"
+says what a program cannot do with them alone.
 
 ## What it is
 
@@ -25,25 +24,26 @@ package is the first and third steps.
 
 **ROCm** is AMD's software stack for its cards. **HIP** is the part of
 it a host program calls, and the library a program links against is
-`libamdhip64.so`. There is no file called `libhip.so`; the package's
+`libamdhip64.so`. There is no file called `libhip.so`. The package's
 name follows the naming convention for a bindings package rather than
 the file name of the library.
 
-HIP's interface deliberately mirrors CUDA's. Every function below has a
-CUDA counterpart with the same arguments in the same order, and the two
-differ only in the three letters at the front of the name. That is what
-lets one piece of source compile for both kinds of card.
+HIP's C API deliberately mirrors CUDA's. Every function below has a
+CUDA counterpart that takes the same arguments in the same order. The
+two names differ only in the prefix, `hip` where CUDA writes `cuda`.
+That is what lets one piece of source compile for both kinds of card.
 
 **Device memory** is the card's memory. `hip_malloc` reserves a block of
-it and answers the address, exactly as `malloc` does for ordinary
-memory, except that the address means nothing to the processor running
-the program. Only the card can read it, and only through the runtime.
+it and writes the address into a slot the caller supplies, where
+`malloc` answers the address directly. The address means nothing to the
+processor running the program. Only the card can read it, and only
+through the runtime.
 
 A **copy** moves bytes between the two memories. `hip_memcpy` takes a
 destination address, a source address, a byte count and a direction. The
-direction is the fourth argument, and getting it wrong is the common
-mistake: the runtime cannot tell a host address from a device address by
-looking at it.
+direction is the fourth argument. Getting it wrong is the common
+mistake, because the runtime cannot tell a host address from a device
+address by looking at it.
 
 The runtime is **asynchronous** in places. A computation the card is
 asked to run returns to the program immediately, and the program finds
@@ -61,20 +61,26 @@ the runtime supplies both.
 novo pkg add libhip-sys
 ```
 
-Adding the package does not install the C library. On Ubuntu, AMD's
-repository provides it:
+Adding the package does not install the C library. AMD publishes the
+current runtime in its own ROCm repository, which a machine has to add
+before apt can see it:
 
 ```
 sudo apt install rocm-hip-runtime
 ```
+
+Ubuntu 24.04 carries an older runtime in `universe`, as
+`libamdhip64-dev` at ROCm 5.7.1. That package supplies the
+`libamdhip64.so` the linker asks for and needs no third-party
+repository.
 
 ROCm installs into `/opt/rocm`, where the linker does not look by
 default. A program that links against it adds `/opt/rocm/lib` to its own
 link flags.
 
 A card and a kernel driver are separate from the runtime. A machine with
-the runtime and no supported card links and runs, and every call answers
-a failure code saying there is no device.
+the runtime and no supported card links and runs, and the runtime
+answers `hipErrorNoDevice`.
 
 ## Example
 
@@ -111,8 +117,9 @@ fn main() [io, ffi]
     ptr.free(host_out)
 ```
 
-The example is fenced as an illustration rather than a compiled block
-because it needs ROCm, which this repository does not ship.
+The example is fenced as an illustration rather than a compiled block,
+because compiling it would link against ROCm, which this repository does
+not ship.
 
 ## What the package contains
 
@@ -143,12 +150,13 @@ The four groups:
 3. **Zero is success and every other code is a failure.** The name of
    the code comes from `hip_get_error_name` and the sentence from
    `hip_get_error_string`. Both answer the address of a C string the
-   runtime owns; read it with `ptr.read_str` and do not free it.
-4. **The copy direction is an argument, and it is not checked.** 1 is
-   host to device, 2 is device to host, 3 is device to device, and 4
-   asks the runtime to work it out from the two addresses. The runtime
-   cannot tell the two kinds of address apart by inspection, so 1 with
-   the arguments the wrong way round is a fault rather than a message.
+   runtime owns. Read it with `ptr.read_str` and do not free it.
+4. **The copy direction is an argument, and it is not checked.** 0 is
+   host to host, 1 is host to device, 2 is device to host, 3 is device
+   to device, and 4 asks the runtime to work it out from the two
+   addresses. The runtime cannot tell the two kinds of address apart by
+   inspection, so 1 with the arguments the wrong way round is a fault
+   rather than a message.
 5. **A byte count is a byte count.** Neither side checks the length of
    a buffer, so a copy that names more bytes than the source holds reads
    past it.
@@ -159,11 +167,12 @@ The four groups:
 7. **A failure may arrive later than the call that caused it.** A card
    runs work asynchronously, so `hip_device_synchronize` and
    `hip_get_last_error` are where a fault surfaces.
-   `hip_get_last_error` clears the error; `hip_peek_at_last_error`
+   `hip_get_last_error` clears the error and `hip_peek_at_last_error`
    leaves it.
-8. **The error numbers are not CUDA's.** The names match and most of the
-   values do, but a program that hard-codes a number rather than
-   comparing against zero is relying on a coincidence.
+8. **Compare an error code against zero, not against a number.** HIP's
+   error names match CUDA's and many of the values do. The enumeration
+   is still HIP's own, so a program that hard-codes a number is relying
+   on a coincidence.
 
 ## What is not included
 
@@ -173,8 +182,8 @@ The four groups:
   kernel compiles it with `hipcc` and calls it through its own foreign
   declaration. This package moves the data the kernel reads.
 - **Streams and events.** `hipStream_t` and `hipEvent_t` are opaque
-  handles the runtime passes by value, and the calls that take them are
-  the asynchronous copy, the asynchronous launch, and the timing
+  handles the runtime passes by value. The calls that take them are the
+  asynchronous copy, the asynchronous launch and the timing
   measurements. They are left out until there is a consumer that needs
   overlapping work.
 - **The linear algebra library.** `hipblasSgemm` and its neighbours are
@@ -203,13 +212,13 @@ It is the right choice for a program that wants a graphics card rather
 than an AMD one, and it installs nothing by hand.
 
 There is no novo-lang replacement for this package and none is planned.
-A graphics card is a piece of hardware whose interface is the vendor's
-own library. There is no format to reimplement.
+A graphics card is a piece of hardware whose published C API is the
+vendor's own library. There is no format to reimplement.
 
 ## Tests
 
-`tests/libhip_tests.nv` holds nine tests written against the
-signatures:
+`tests/libhip_tests.nv` holds nine tests over the thirteen entry
+points:
 
 ```
 novo test tests/libhip_tests.nv
@@ -219,27 +228,15 @@ The suite links against the HIP runtime, so it needs ROCm installed.
 Without it the link fails, naming `-lamdhip64`. `novo pkg build`
 type-checks the declarations and needs nothing installed.
 
-The tests do not need a card. Each one accepts both answers: on a
+The tests do not need a card. Each one accepts both answers. On a
 machine with a card the successful path is asserted to be
 self-consistent, and on a machine without one the failure is asserted to
 carry a name. The round trip through device memory writes eight bytes
 up, reads them back, clears them and reads them back again.
 
-No AMD card was available when this package was written, so the suite
-has never been run against one. Every test is written to pass on a
-machine without a card, and that is the only outcome anyone has
-observed.
-
-## Implementation status
-
-| Group | State |
-| --- | --- |
-| Device | Complete for selection and counting. |
-| Memory | Complete for synchronous allocation and copying. |
-| Synchronisation | Complete for the whole-device barrier. |
-| Errors | Complete. |
-| Streams and events | Absent. |
-| Kernels | Absent, and out of scope. |
+The suite has never been run against an AMD card. Every test is written
+to pass on a machine without one, and that is the only outcome anyone
+has observed.
 
 ## Licence
 
